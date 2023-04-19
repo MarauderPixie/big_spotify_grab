@@ -52,7 +52,7 @@ app <- oauth_app(
 # [11] "user-follow-modify"          "user-follow-read"            "user-read-playback-position" "user-top-read"               "user-read-recently-played"
 # [16] "user-library-modify"         "user-library-read"           "user-read-email"             "user-read-private"
 
-scopes_ltd <- paste("playlist-read-private", "playlist-read-collaborative",
+scopes_ltd <- paste("playlist-read-private", "playlist-read-collaborative", "user-follow-read",
                     "user-top-read", "user-read-recently-played", "user-library-read")
 
 # very clunky for the time being:
@@ -212,6 +212,7 @@ server <- function(input, output, session) {
   front <- reactiveValues()
   pgres <- reactiveValues()
   
+  ##### Sth Sth userland-ish ----
   observeEvent(input$top50, {
     front$top50_artists <- get_my_top_artists_or_tracks(
       time_range = input$time_range,
@@ -292,29 +293,33 @@ server <- function(input, output, session) {
       artists2 <- get_my_top_artists_or_tracks(
         type   = "artists",
         limit  = 50, 
-        ##################################################
-        offset = nrow(artists1)-1,
-        ##################################################
+        ## currently (as of 19.04.2023), spotify doesn't return anything if offset is >=50
+        offset = min(nrow(artists1), 49),
         time_range = rng, 
         authorization = token
       )
       
       tracks1 <- get_my_top_artists_or_tracks(
-        time_range = rng, type = "tracks",
-        limit = 50, authorization = token
-      ) 
-      tracks2 <- get_my_top_artists_or_tracks(
-        time_range = rng, type = "tracks",
-        limit = 50, offset = nrow(tracks1)+1,
+        time_range = rng, 
+        type = "tracks",
+        limit = 50, 
         authorization = token
       )
+      tracks2 <- get_my_top_artists_or_tracks(
+        time_range = rng, 
+        type = "tracks",
+        limit = 50, 
+        offset = min(nrow(tracks1), 49),
+        authorization = token
+      )
+      
       
       tmp_artists <- bind_rows(
         artists1, artists2
       ) %>%
         mutate(
           uuid = current_uuid,
-          user = "bob",# input$user_name,
+          user = input$user_name,
           position = seq(n()),
           time_range = rng
         )
@@ -324,7 +329,7 @@ server <- function(input, output, session) {
       ) %>%
         mutate(
           uuid = current_uuid,
-          user = "bob",# input$user_name,
+          user = input$user_name,
           position = seq(n()),
           time_range = rng
         )
@@ -333,8 +338,10 @@ server <- function(input, output, session) {
       user_tracks  <- bind_rows(user_tracks, tmp_tracks)
     }
     
-    pgres$user_top100_artists <- user_artists
-    pgres$user_top100_tracks  <- user_tracks
+    pgres$user_top100_artists <- user_artists %>% 
+      select(uuid, user, time_range, position, id, uri)
+    pgres$user_top100_tracks  <- user_tracks %>% 
+      select(uuid, user, time_range, position, id, uri)
     
     updateSpsTimeline(session, "timeline", 1, down_label = "done")
     
@@ -362,25 +369,36 @@ server <- function(input, output, session) {
       tmp_tracks <- get_my_saved_tracks(limit = 50, 
                                         offset = offset_tracks,
                                         authorization = token)
-      
       if (offset_tracks != 0) {
         user_saved_tracks <- bind_rows(user_saved_tracks, tmp_tracks)
       } else {
         user_saved_tracks <- tmp_tracks
       }
       offset_tracks <- offset_tracks + 50
+      
+      if (offset_tracks == 0) {
+        shinyCatch(message("This may take while"), position = "top-center")
+      }
+      if (offset_tracks == 2000) {
+        shinyCatch(message(""), position = "top-center")
+      }
+      if (offset_tracks == 4000) {
+        shinyCatch(message("Still running..."), position = "top-center")
+      }
     }
     
-    pgres$user_saved_albums <- user_saved_tracks %>%
+    pgres$user_saved_albums <- user_saved_albums %>%
       mutate(
         uuid = current_uuid,
         user = input$user_name
-      )
+      ) %>% 
+      select(uuid, user, added_at, album.id, album.uri)
     pgres$user_saved_tracks <- user_saved_tracks %>%
       mutate(
         uuid = current_uuid,
         user = input$user_name
-      )
+      ) %>% 
+      select(uuid, user, added_at, track.id, track.uri)
     
     updateSpsTimeline(session, "timeline", 2, down_label = "done") # , up_label = "0000", down_label = "2")
     
@@ -404,7 +422,8 @@ server <- function(input, output, session) {
       mutate(
         uuid = current_uuid,
         user = input$user_name
-      )
+      ) %>% 
+      select(uuid, user, id, uri)
     
     updateSpsTimeline(session, "timeline", 3, down_label = "done")
     
@@ -425,7 +444,8 @@ server <- function(input, output, session) {
       mutate(
         uuid = current_uuid,
         user = input$user_name
-      )
+      ) %>% 
+      select(uuid, user, played_at, track.id, track.uri, context.uri)
     
     updateSpsTimeline(session, "timeline", 4, down_label = "done")
     
