@@ -53,7 +53,8 @@ app <- oauth_app(
 # [16] "user-library-modify"         "user-library-read"           "user-read-email"             "user-read-private"
 
 scopes_ltd <- paste("playlist-read-private", "playlist-read-collaborative", "user-follow-read",
-                    "user-top-read", "user-read-recently-played", "user-library-read")
+                    "user-top-read", "user-read-recently-played", "user-library-read",
+                    "user-read-email", "user-read-private")
 
 # very clunky for the time being:
 api <- oauth_endpoint(
