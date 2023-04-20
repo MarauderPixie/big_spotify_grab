@@ -73,7 +73,7 @@ has_auth_code <- function(params) {
 
 uiFunc <- function(req) {
   # cat("Step 1 -- just a sec. Or 5.\n")
-  Sys.sleep(5)
+  # Sys.sleep(5)
   if (!has_auth_code(parseQueryString(req$QUERY_STRING))) {
     # cat(paste("parseQueryString #1:", parseQueryString(req$QUERY_STRING), "\n\n"))
     # cat("oauth -- generate URL\n")
@@ -81,7 +81,7 @@ uiFunc <- function(req) {
     # cat("oauth -- location.replace(...)\n")
     redirect <- sprintf("location.replace(\"%s\");", url)
     # cat("oauth -- ship script\n\n")
-    Sys.sleep(2)
+    # Sys.sleep(2)
     tags$script(HTML(redirect))
   } else {
     # cat(paste("parseQueryString #2:", parseQueryString(req$QUERY_STRING), "\n\n"))
@@ -121,42 +121,45 @@ ui <- fluidPage(
   # Application title
   titlePanel("API Call Prototype"),
   
-  # Sidebar
+  #### the Sidebar ----
   sidebarLayout(
     
     sidebarPanel(
-      radioButtons("time_range", label = h3("Zeitraum"),
-                   choices = list("etwa 4 Wochen" = "short_term",
-                                  "etwa 6 Monate" = "medium_term",
-                                  "mehrere Jahre" = "long_term"),
-                   selected = 1),
-      hr(),
-      actionButton("top50", label = "Get Top 50 Artists", icon = icon("spotify")),
+      
+      p("Clicking the 'Donate Data' button below will start a data collection process
+         that includes the following information:"),
+      tags$ul(
+        tags$li("your Top 100 artists and tracks of the last ~4 weeks, ~6 Months and like, way back"),
+        tags$li("all your saved/liked artists and tracks"),
+        tags$li("the artists you follow"),
+        tags$li("the last 100 tracks you listened to")
+      ),
       hr(),
       
-      textInput("user_name", label = "User (optional)"),
-      actionButton("donation", label = "Donate Data", icon = icon("spotify"))
-    ),
-    
-    # Show a plot of the generated distribution
-    mainPanel(
-      
-      # gallery(texts = test_imgs$name,
-      #         hrefs = test_imgs$url,
-      #         images = test_imgs$url,
-      #         title = "Top 10",
-      #         image_frame_size = 1,
-      #         enlarge = TRUE),
-      # uiOutput("houz"),
-      fluidRow(htmlOutput("test_img")),
-      
-      hr(),
-      fluidRow(
-        column(4, tableOutput("top10_artists")),
-        column(4, tableOutput("top10_genres")),
-        column(4, tableOutput("top10_tracks"))
+      p("To remain completely anonymous, just leave the box unchecked. In that case, there is no possibility 
+         to alter or remove your data after you clicked the button."),
+      p("Checking the box will additionally to the above store the following information:"),
+      tags$ul(
+        tags$li(strong("your email address")),
+        tags$li("your username"),
+        tags$li("the URL to your user image"),
+        tags$li("the country your account is registered in"),
+        tags$li("spotify specifc info like follower count,", 
+                a("see here for details", 
+                  href = "https://developer.spotify.com/documentation/web-api/reference/get-current-users-profile"))
       ),
       
+      checkboxInput("personal_data", 
+                    strong(HTML("I allow the usage and storage of my user name and email adress. <br />
+                                 I understand that this forfeits my anonymity."))),
+      
+      hr(),
+      
+      actionButton("donation", label = "Donate Data", icon = icon("spotify"), width = "100%")
+    ),
+    
+    #### Welp, the main panel ----
+    mainPanel(
       hr(),
       spsTimeline(
         "timeline",
@@ -164,7 +167,8 @@ ui <- fluidPage(
         down_labels = c("", "", "", "", ""),
         icons = list(icon("spotify"), icon("spotify"), icon("spotify"), icon("spotify"), icon("database")),
         completes = c(FALSE, FALSE, FALSE, FALSE, FALSE)
-      )
+      ),
+      hr()
     )
   )
 )
@@ -209,59 +213,14 @@ server <- function(input, output, session) {
   
   current_uuid <- ids::uuid(use_time = TRUE)
   
-  front <- reactiveValues()
   pgres <- reactiveValues()
   
   ##### Sth Sth userland-ish ----
   observeEvent(input$top50, {
-    front$top50_artists <- get_my_top_artists_or_tracks(
-      time_range = input$time_range,
-      limit = 50, authorization = token
-    )
-    
-    front$top50_tracks <- get_my_top_artists_or_tracks(
-      type = "tracks", time_range = input$time_range,
-      limit = 50, authorization = token
-    ) %>%
-      unnest(album.images) %>%
-      filter(height == min(height)) %>%
-      transmute(
-        # artists = artists,
-        img_url = url,
-        track_title = name
-      )
-    
-    front$top50_genres <- front$top50_artists %>%
-      tidyr::unnest(cols = "genres") %>%
-      mutate(
-        # uuid   = current_uuid,
-        # user   = input$user_name,
-        genres = stringr::str_to_title(genres)
-      ) %>%
-      count(genres, sort = TRUE)
-    
-    
-    ## top10 actually
-    front$t10g <- front$top50_genres %>%
-      head(10)
-    
-    front$t10a <- front$top50_artists %>%
-      select(name) %>%
-      head(10)
-    
-    front$t10t <- front$top50_tracks %>%
-      # mutate(
-      #     img_url = paste0("<img src=\"",img_url, "\" height=\"30\" data-placement=\"right\"></img>")
-      # ) %>%
-      head(10)
-    
-    # testing of raw html:
-    # front$test_img <- paste0("<img src='", front$top50_tracks$img_url[1], "'></img>")
-    # cat(front$test_img, "\n")
   })
   
   ########################################################
-  ## Get User Data and write to postgres db
+  ## Get User Data and write to postgres db ----
   loader_replace <- addLoader$new("donation", type = "facebook")
   
   observeEvent(input$donation, {
@@ -274,6 +233,11 @@ server <- function(input, output, session) {
       user = db_params$user,
       password = db_params$pass
     )
+    
+    if (input$personal_data) {
+      pgres$user.profile_data <- get_my_profile(token) %>% 
+        mutate(uuid = current_uuid)
+    }
     
     
     #### Step 1: Top 100 Artists & Tracks ----
@@ -318,7 +282,7 @@ server <- function(input, output, session) {
       ) %>%
         mutate(
           uuid = current_uuid,
-          user = input$user_name,
+          # user = input$user_name,
           position = seq(n()),
           time_range = rng
         )
@@ -328,7 +292,7 @@ server <- function(input, output, session) {
       ) %>%
         mutate(
           uuid = current_uuid,
-          user = input$user_name,
+          # user = input$user_name,
           position = seq(n()),
           time_range = rng
         )
@@ -338,9 +302,9 @@ server <- function(input, output, session) {
     }
     
     pgres$user_top100_artists <- user_artists %>% 
-      select(uuid, user, time_range, position, id, uri)
+      select(uuid, time_range, position, id, uri)
     pgres$user_top100_tracks  <- user_tracks %>% 
-      select(uuid, user, time_range, position, id, uri)
+      select(uuid, time_range, position, id, uri)
     
     updateSpsTimeline(session, "timeline", 1, down_label = "done")
     
@@ -387,16 +351,14 @@ server <- function(input, output, session) {
     
     pgres$user_saved_albums <- user_saved_albums %>%
       mutate(
-        uuid = current_uuid,
-        user = input$user_name
+        uuid = current_uuid
       ) %>% 
-      select(uuid, user, added_at, album.id, album.uri)
+      select(uuid, added_at, album.id, album.uri)
     pgres$user_saved_tracks <- user_saved_tracks %>%
       mutate(
-        uuid = current_uuid,
-        user = input$user_name
+        uuid = current_uuid
       ) %>% 
-      select(uuid, user, added_at, track.id, track.uri)
+      select(uuid, added_at, track.id, track.uri)
     
     updateSpsTimeline(session, "timeline", 2, down_label = "done") # , up_label = "0000", down_label = "2")
     
@@ -417,10 +379,9 @@ server <- function(input, output, session) {
     
     pgres$user_followed_artists <- user_followed_artists %>% 
       mutate(
-        uuid = current_uuid,
-        user = input$user_name
+        uuid = current_uuid
       ) %>% 
-      select(uuid, user, id, uri)
+      select(uuid, id, uri)
     
     updateSpsTimeline(session, "timeline", 3, down_label = "done")
     
@@ -438,10 +399,9 @@ server <- function(input, output, session) {
       recent_50_vorne, recent_50_hinten
     ) %>% 
       mutate(
-        uuid = current_uuid,
-        user = input$user_name
+        uuid = current_uuid
       ) %>% 
-      select(uuid, user, played_at, track.id, track.uri, context.uri)
+      select(uuid, played_at, track.id, track.uri, context.uri)
     
     updateSpsTimeline(session, "timeline", 4, down_label = "done")
     
@@ -464,21 +424,7 @@ server <- function(input, output, session) {
     updateActionButton(inputId = "donation", label = "All done, thank you!")
     disable("donation")
   })
-  ########################################################
   
-  output$top10_genres <- renderTable({
-    front$t10g
-  }, hover = TRUE)
-  
-  output$top10_artists <- renderTable({
-    front$t10a
-  }, hover = TRUE)
-  
-  output$top10_tracks <- renderTable({
-    front$t10t
-  }, hover = TRUE)
-  
-  # output$test_img <- renderUI({HTML(front$test_img)})
 }
 
 # Run the application
