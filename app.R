@@ -160,10 +160,10 @@ ui <- fluidPage(
       hr(),
       spsTimeline(
         "timeline",
-        up_labels = c("Top 100", "Saved Items", "Followed Artists", "Recently Played"),
-        down_labels = c("", "", "", ""),
-        icons = list(icon("spotify"), icon("spotify"), icon("spotify"), icon("spotify")),
-        completes = c(FALSE, FALSE, FALSE, FALSE)
+        up_labels = c("Top 100", "Saved Items", "Followed Artists", "Recently Played", "Store everything"),
+        down_labels = c("", "", "", "", ""),
+        icons = list(icon("spotify"), icon("spotify"), icon("spotify"), icon("spotify"), icon("database")),
+        completes = c(FALSE, FALSE, FALSE, FALSE, FALSE)
       )
     )
   )
@@ -276,8 +276,7 @@ server <- function(input, output, session) {
     )
     
     
-    #####
-    ## Step 1: Top 100 Artists & Tracks
+    #### Step 1: Top 100 Artists & Tracks ----
     user_artists <- tibble()
     user_tracks  <- tibble()
     sml <- c("short_term", "medium_term", "long_term")
@@ -346,8 +345,7 @@ server <- function(input, output, session) {
     updateSpsTimeline(session, "timeline", 1, down_label = "done")
     
     
-    #####
-    ## Step 2: Saved tracks & albums
+    #### Step 2: Saved tracks & albums ----
     offset_albums <- 0
     offset_tracks <- 0
     tmp_albums <- tibble()
@@ -403,8 +401,7 @@ server <- function(input, output, session) {
     updateSpsTimeline(session, "timeline", 2, down_label = "done") # , up_label = "0000", down_label = "2")
     
     
-    #####
-    ## Step 3: Followed Artists
+    #### Step 3: Followed Artists ----
     tmp_followed <- tibble()
     
     while(nrow(tmp_followed) == 50 | nrow(tmp_followed) == 0){
@@ -428,14 +425,13 @@ server <- function(input, output, session) {
     updateSpsTimeline(session, "timeline", 3, down_label = "done")
     
     
-    #####
-    ## Step 4: Last 100 Tracks Played
+    #### Step 4: Last 100 Tracks Played ----
     recent_50_vorne <- get_my_recently_played(
       limit = 50, authorization = token
     )
     recent_50_hinten <- get_my_recently_played(
       limit = 50, authorization = token,
-      after =last(recent_50_vorne$played_at)
+      after = last(recent_50_vorne$played_at)
     )
     
     pgres$user_recently_played <- bind_rows(
@@ -451,9 +447,18 @@ server <- function(input, output, session) {
     
     
     
-    #####
-    ## Postgres Things
+    #### Step 5: Postgres Things ----
+    dbWriteTable(con, "user.top100_artists",   pgres$user_top100_artists)
+    dbWriteTable(con, "user.top100_tracks",    pgres$user_top100_tracks)
+    dbWriteTable(con, "user.saved_albums",     pgres$user_saved_albums)
+    dbWriteTable(con, "user.saved_tracks",     pgres$user_saved_tracks)
+    dbWriteTable(con, "user.followed_artists", pgres$user_followed_artists)
+    dbWriteTable(con, "user.recently_played",  pgres$user_recently_played)
+    
     dbDisconnect(con)
+    
+    updateSpsTimeline(session, "timeline", 5, down_label = "done")
+    
     loader_replace$hide()
     
     updateActionButton(inputId = "donation", label = "All done, thank you!")
