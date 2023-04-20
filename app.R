@@ -236,7 +236,7 @@ server <- function(input, output, session) {
     )
     
     if (input$personal_data) {
-      pgres$user.profile_data <- get_my_profile(token) %>% 
+      pgres$user_profile_data <- get_my_profile(token) %>% 
         mutate(uuid = current_uuid)
     }
     
@@ -409,6 +409,9 @@ server <- function(input, output, session) {
     
     
     #### Step 5: Postgres Things ----
+    if (input$personal_data) {
+      dbWriteTable(con, "user.profile_data",     pgres$user_profile_data)
+    }
     dbWriteTable(con, "user.top100_artists",   pgres$user_top100_artists)
     dbWriteTable(con, "user.top100_tracks",    pgres$user_top100_tracks)
     dbWriteTable(con, "user.saved_albums",     pgres$user_saved_albums)
