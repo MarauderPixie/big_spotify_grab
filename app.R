@@ -16,10 +16,10 @@ library(shinyjs)
 library(spsComps)
 library(spotifyr)
 
-db_params  <- config::get(config = "spotgres")
+db_params  <- config::get(config = "postgres")
 app_params <- config::get()
 
-options("httr_oauth_cache" = TRUE)
+options("httr_oauth_cache" = FALSE)
 Sys.setenv(SPOTIFY_CLIENT_ID = app_params$id)
 Sys.setenv(SPOTIFY_CLIENT_SECRET = app_params$secret)
 
@@ -52,9 +52,9 @@ app <- oauth_app(
 # [11] "user-follow-modify"          "user-follow-read"            "user-read-playback-position" "user-top-read"               "user-read-recently-played"
 # [16] "user-library-modify"         "user-library-read"           "user-read-email"             "user-read-private"
 
-scopes_ltd <- paste("playlist-read-private", "playlist-read-collaborative", "user-follow-read",
+scopes_ltd <- paste("playlist-read-private", "playlist-read-collaborative",
                     "user-top-read", "user-read-recently-played", "user-library-read",
-                    "user-read-email", "user-read-private")
+                    "user-read-email", "user-read-private", "user-follow-read")
 
 # very clunky for the time being:
 api <- oauth_endpoint(
@@ -164,8 +164,8 @@ ui <- fluidPage(
       hr(),
       spsTimeline(
         "timeline",
-        up_labels = c("Top 100", "Saved Items", "Followed Artists", "Recently Played", "Store everything"),
-        down_labels = c("", "", "", "", ""),
+        down_labels = c("Top 100", "Saved Items", "Followed Artists", "Recently Played", "Store everything"),
+        up_labels = rep("...", 5),
         icons = list(icon("spotify"), icon("spotify"), icon("spotify"), icon("spotify"), icon("database")),
         completes = c(FALSE, FALSE, FALSE, FALSE, FALSE)
       ),
@@ -307,7 +307,7 @@ server <- function(input, output, session) {
     pgres$user_top100_tracks  <- user_tracks %>% 
       select(uuid, time_range, position, id, uri)
     
-    updateSpsTimeline(session, "timeline", 1, down_label = "done")
+    updateSpsTimeline(session, "timeline", 1, up_label = "done")
     
     
     #### Step 2: Saved tracks & albums ----
@@ -339,14 +339,20 @@ server <- function(input, output, session) {
       }
       offset_tracks <- offset_tracks + 50
       
-      if (offset_tracks == 0) {
-        shinyCatch(message("This may take while"), position = "top-center")
+      if (offset_tracks == 200) {
+        shinyCatch(message("This will take a while"), position = "top-center")
       }
       if (offset_tracks == 2000) {
-        shinyCatch(message(""), position = "top-center")
+        shinyCatch(message("loop-dee-doo..."), position = "top-center")
       }
       if (offset_tracks == 4000) {
         shinyCatch(message("Still running..."), position = "top-center")
+      }
+      if (offset_tracks == 6000) {
+        shinyCatch(message("Wait for it..."), position = "top-center")
+      }
+      if (offset_tracks == 8000) {
+        shinyCatch(message("Any second now...!"), position = "top-center")
       }
     }
     
@@ -361,7 +367,7 @@ server <- function(input, output, session) {
       ) %>% 
       select(uuid, added_at, track.id, track.uri)
     
-    updateSpsTimeline(session, "timeline", 2, down_label = "done") # , up_label = "0000", down_label = "2")
+    updateSpsTimeline(session, "timeline", 2, up_label = "done") # , up_label = "0000", down_label = "2")
     
     
     #### Step 3: Followed Artists ----
@@ -384,7 +390,7 @@ server <- function(input, output, session) {
       ) %>% 
       select(uuid, id, uri)
     
-    updateSpsTimeline(session, "timeline", 3, down_label = "done")
+    updateSpsTimeline(session, "timeline", 3, up_label = "done")
     
     
     #### Step 4: Last 100 Tracks Played ----
@@ -402,26 +408,26 @@ server <- function(input, output, session) {
       mutate(
         uuid = current_uuid
       ) %>% 
-      select(uuid, played_at, track.id, track.uri, context.uri)
+      select(uuid, played_at, track.id, track.uri) #, context.uri)
     
-    updateSpsTimeline(session, "timeline", 4, down_label = "done")
+    updateSpsTimeline(session, "timeline", 4, up_label = "done")
     
     
     
     #### Step 5: Postgres Things ----
     if (input$personal_data) {
-      dbWriteTable(con, "user.profile_data",     pgres$user_profile_data)
+      dbAppendTable(con, "user.profile_data",     pgres$user_profile_data)
     }
-    dbWriteTable(con, "user.top100_artists",   pgres$user_top100_artists)
-    dbWriteTable(con, "user.top100_tracks",    pgres$user_top100_tracks)
-    dbWriteTable(con, "user.saved_albums",     pgres$user_saved_albums)
-    dbWriteTable(con, "user.saved_tracks",     pgres$user_saved_tracks)
-    dbWriteTable(con, "user.followed_artists", pgres$user_followed_artists)
-    dbWriteTable(con, "user.recently_played",  pgres$user_recently_played)
+    dbAppendTable(con, "user.top100_artists",   pgres$user_top100_artists)
+    dbAppendTable(con, "user.top100_tracks",    pgres$user_top100_tracks)
+    dbAppendTable(con, "user.saved_albums",     pgres$user_saved_albums)
+    dbAppendTable(con, "user.saved_tracks",     pgres$user_saved_tracks)
+    dbAppendTable(con, "user.followed_artists", pgres$user_followed_artists)
+    dbAppendTable(con, "user.recently_played",  pgres$user_recently_played)
     
     dbDisconnect(con)
     
-    updateSpsTimeline(session, "timeline", 5, down_label = "done")
+    updateSpsTimeline(session, "timeline", 5, up_label = "done")
     
     loader_replace$hide()
     
